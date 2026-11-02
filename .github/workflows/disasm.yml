@@ -1,0 +1,58 @@
+name: disasm
+
+# 把 raw/ 里的 hex 丢给 capstone 还原成 ARM64 汇编。
+# 动机：hlpatch 的 /il2cpp/disassemble 只返回 hex_dump，没有助记符，
+#       在手机上手工解码 2048 字节不可靠 → 搬到 CI 用 capstone 批量做。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  disasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install capstone
+        run: pip install --quiet capstone
+
+      - name: Disassemble raw/*
+        run: |
+          shopt -s nullglob
+          files=(raw/*.json raw/*.txt)
+          if [ ${#files[@]} -eq 0 ]; then echo "no raw input"; exit 0; fi
+          python3 tools/disasm.py "${files[@]}" 2>&1 | tee disasm_log.txt
+
+      - name: Commit results
+        run: |
+          git config user.name "disasm-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout -B workbench/disasm-out
+          git add out/ disasm_log.txt
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "disasm: capstone output for raw/*"
+            git push --force origin workbench/disasm-out
+          fi
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disasm-out
+          path: |
+            out/
+            disasm_log.txt
+          if-no-files-found: ignore
+          overwrite: true
