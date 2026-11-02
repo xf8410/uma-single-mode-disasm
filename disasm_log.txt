@@ -1,0 +1,4 @@
+raw/ctor_0x7547a5e304.txt: 504 bytes -> 126 insns, 2 consts
+raw/gainbuilder_0x7543427748.txt: 256 bytes -> 64 insns, 0 consts
+raw/gainbuilder_impl_0x754342a684.txt: 256 bytes -> 64 insns, 4 consts
+raw/selftest_0x7547a565e0.txt: 32 bytes -> 8 insns, 3 consts

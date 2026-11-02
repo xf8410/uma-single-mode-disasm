@@ -1,0 +1,2 @@
+0x7547a5e3ac  mov w8, #1
+0x7547a5e4d4  and w8, w19, #1
