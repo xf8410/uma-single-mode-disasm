@@ -1,46 +1,104 @@
 # uma-single-mode-disasm
 
-育成（SingleMode）剧本的**反汇编档案 + 运行时数据实测记录 + 方法论**。
-目的：让任何一个新会话（人或 AI）**不需要重新摸索**就能接手下一个剧本。
+剧本15（Single Mode / Scenario Festa）反汇编与协议解码档案。
+
+> **纪律**：每条结论必须标证据 —— **[测]** 实测 / **[码]** 代码 / **[文]** 文档 / **[无证]** 未验证。
+> 手解助记符一律标 **[手解·待复核]**，不当作结论引用。
 
 ---
 
-## 这个仓库是什么
+## 一、结论速查
 
-| 目录 | 内容 |
+| 主题 | 结论 | 证据 |
+|:--|:--|:-:|
+| 协议载荷 | **不加密**，明文 msgpack | [测] |
+| 协议嵌套 | 单条请求最长 **9 层** | [测] |
+| 内存引用链 | **6 层** | [测] |
+| 速度训练命令 | `command_type 1` / `command_id 101` | [测] |
+| `CommandGainActGaugeArray` | 只含 type **3/4/7/8**，不参与普通训练 | [测] |
+| `GetGainActGaugeAmount` | **无计算**，纯 `TryGetValue` 尾调用 | [码] |
+| `_gainActGaugeAmountDict` | `IReadOnlyDictionary<ActType, Int32>`，偏移 **+24** | [码] |
+| 字典填充点 | 构造函数内**一次外部调用**，非内联常量 | [手解·待复核] |
+| 训练后 Act 对象 | **已被回收**，指针悬空 | [测] |
+
+---
+
+## 二、文档索引
+
+| 文档 | 内容 |
 |:--|:--|
-| `docs/METHOD.md` | **先读这个**。端点清单、定位流程、ARM64 手工解码技巧、失败模式 |
-| `docs/SCENARIO-15.md` | 剧本15（Festa / 骏大祭）全链实测：字段表、字典、原始字节 |
-| `docs/TEMPLATE.md` | 新剧本开档模板，复制即用 |
-| `raw/` | 原始 hex / 反汇编段，原样保存，不做改写 |
+| [`docs/SCENARIO-15-PROTOCOL.md`](docs/SCENARIO-15-PROTOCOL.md) | 协议 msgpack 逐字段解码、`command_info_array` 全表 |
+| [`docs/NESTING-LAYERS.md`](docs/NESTING-LAYERS.md) | 嵌套层实测（协议 9 层 / 内存 6 层） |
+| [`docs/OBSERVATION-POINTS.md`](docs/OBSERVATION-POINTS.md) | 训练结果可观测端点全表（8 个，成功失败都记） |
+| [`docs/DISASM-GET-GAIN-ACT-GAUGE.md`](docs/DISASM-GET-GAIN-ACT-GAUGE.md) | getter 反汇编：值全由字典决定 |
+| [`docs/DISASM-CREATE-COMMAND-ENTITY.md`](docs/DISASM-CREATE-COMMAND-ENTITY.md) | 命令实体构造入口反汇编 |
+| [`docs/DISASM-ENTITY-CTOR.md`](docs/DISASM-ENTITY-CTOR.md) | 构造函数手解记录（**待 capstone 复核**） |
+| [`docs/SCENARIO-15-GAUGE.md`](docs/SCENARIO-15-GAUGE.md) | 演目计量表与 `cset` 更正 |
 
 ---
 
-## 三条硬规矩
+## 三、关键地址
 
-1. **每条结论标证据**：`[表]` MDB 查询 / `[码]` 反汇编 / `[测]` 内存实测 / `[文]` UI 文案 / `[无证]` 无证据。
-2. **没有证据就写「未知」**，不写「可能」「应该」「推测」。
-3. **地址必须现取现用**。跨操作的地址必然失效（对象会被回收）——这一条踩过坑。
-
----
-
-## 当前进度
-
-| 剧本 | 状态 | 文件 |
-|:--|:--|:--|
-| 15 Festa（骏大祭） | 进行中：字段表 / 进度字典 / 加密布局 已实测 | `docs/SCENARIO-15.md` |
-| 12 Breeders | 未开始 | — |
-| 13 ? | 未开始 | — |
-| 14 ? | 未开始 | — |
-| 16 Onsen | 未开始 | — |
-| 17 Ramen | 未开始 | — |
-
-> 剧本编号对应的类名前缀已确认存在：`SingleModeScenario{Breeders,Onsen,Ramen,Festa}`、
-> `WorkSingleModeScenario{Festa,Onsen,Ramen,Breeders}`。**[码]**
+| 符号 | 地址 |
+|:--|:--|
+| `TrainingCommandEntity.GetGainActGaugeAmount` | `0x7547a565e0` |
+| `TrainingCommandEntity..ctor` | `0x7547a5e304` |
+| `TrainingCommandRepository.CreateCommandEntity` | `0x7547a62284` |
+| `bl` 目标（构造函数内） | `0x70e43844` **[手解·待复核]** |
 
 ---
 
-## 法律/使用声明
+## 四、数据结构速查
 
-本仓库仅记录**逆向分析与内存观测的方法与结果**，不含游戏本体资源、不含可执行补丁、
-不含绕过授权的工具。所有素材来自本机运行中的进程观测，用于研究与个人存档用途。
+### `TrainingCommandEntity`
+
+| 偏移 | 字段 | 类型 |
+|--:|:--|:--|
+| +16 | CommandId | `TrainingCommandId` |
+| **+24** | **`_gainActGaugeAmountDict`** | `IReadOnlyDictionary<ActType, Int32>` |
+| +32 | IsUpperTrainingEventOccurred | `bool` |
+
+### `WorkSingleModeScenarioFestaDataSet`
+
+| 偏移 | 字段 |
+|--:|:--|
+| +16 | FestaInfo |
+| +24 | CommandInfoArray |
+| +32 | EvaluationInfoArray |
+| +40 | AdviceInfoArray |
+| **+48** | **ActInfoArray** |
+| +56 | CheckPointResultArray |
+| +64 | CommandGainActGaugeArray |
+| +72 | NotUpParameterInfo |
+| +80 | AutoSettingInfo |
+
+> 字段偏移**每次现查** `/il2cpp/dump`，不背。
+
+---
+
+## 五、工具链
+
+```
+raw/<name>_0x<addr>.txt   ← /il2cpp/disassemble 的 hex（"0000: xx xx ..." 格式）
+        │
+        ▼  GitHub Actions: .github/workflows/disasm.yml
+      tools/disasm.py  (capstone)
+        │
+        ▼
+out/<name>.asm      逐条汇编
+out/<name>.consts   立即数扫描
+```
+
+**手解禁止入结论**：先落 `raw/` → CI 出 asm → 再讨论语义。
+
+---
+
+## 六、已知缺口
+
+| # | 缺口 | 状态 |
+|:-:|:--|:--|
+| 1 | `_gainActGaugeAmountDict` 的填充逻辑 | [无证] |
+| 2 | 演目进度增量的真实来源 | [无证] |
+| 3 | 命令条数三处不一致（12 / 10 / 7） | [无证] |
+| 4 | `target_type` 全枚举语义 | [无证] |
+| 5 | `+0x20` 的 `& 3` 承载几个布尔 | [无证] |
